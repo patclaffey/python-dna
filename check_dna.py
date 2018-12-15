@@ -1,9 +1,14 @@
 import collections
 import argparse
 import pyperclip
+import configparser
+import webbrowser
+import requests
+import bs4
+import re
 
 
-def load_dna_file():
+def load_dna_file(file_in):
     """
     Open dna data file
     Ignore comments and header
@@ -12,8 +17,9 @@ def load_dna_file():
     #rsid	chromosome	position	allele1	allele2
     #['rs369202065', '1', '569388', 'G', 'G']
     """
+
     data = []
-    with open('dna.txt', 'rt') as file:
+    with open(file_in, 'rt') as file:
         for line in file:
             if ('#' not in line.lower() ) and ('rsid' not in line.lower() ):
                 field = line.split()
@@ -67,13 +73,98 @@ def print_base_pair_summary(data):
         print("Invalid Base Pair {} occurs {:>7,} times".format(key, c_invalid[key]))
 
 
-def main(get_num_base_pairs, print_chrom_summary, print_snp, base_pair_summary, base_pair_chrom, summary, print_snp2):
+def print_header(numBasePairs, subject):
+    print ("The subject is {}".format(subject))
+    print ("The file reports on {:,} DNA base pairs or SNPs".format(numBasePairs))
 
-    dnaTable = load_dna_file()
+def check_snp_view(dnaTable, snp_list):
+    for snp in snp_list:
+        #print("The snp value from file is {}".format(snp))
+        print ("*" * 40)
+        found = False
+        for record in dnaTable:
+            if record[0] == snp:
+                #print(record)
+                print('{} (position {}-{}) reported in file with values {} and {}'.format(*record) )
+                found = True
+        if found == False:
+            print('{} not reported in dna file, values not know'.format(snp) )
+
+        webbrowser.open(config['WEB']['ncbi'] + snp)
+
+def check_snp_auto(dnaTable, snp_list):
+    for snp in snp_list:
+        url = config['WEB']['ncbi'] + snp
+        print ("*" * 40)
+        found = False
+        for record in dnaTable:
+            if record[0] == snp:
+                print("{:>19}:  {}".format('SNP Identifier',snp))
+                print("{:>19}:  {},{}".format('Observed Alleles', record[3], record[4]))
+                print("{:>19}:  {}".format('Chromosome', record[1]))
+                #print('{} (position {}-{}) reported in file with values {} and {}'.format(*record) )
+                found = True
+        if found == False:
+            print('{} not reported in dna file, values not know'.format(snp) )
+
+        res = requests.get(url)
+        #print ("status code is " + str(res.status_code))
+        #print (res.text[:50])
+        #print (res.request.headers)
+        #print (res.headers)
+        page = bs4.BeautifulSoup(res.text, features="html.parser")
+        #print("page title is " + page.title.string)
+
+        keyPos = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dt")[1].getText().strip()
+        valuePos0 = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dd")[1].find_all("span")[0].getText().strip()
+        valuePos1 = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dd")[1].find_all("span")[1].getText().strip()
+        keyAlleles = page.find_all('dl',class_='usa-width-one-half')[0].find_all("dt")[2].getText().strip()
+        valueAlleles = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dd")[2].getText().strip()
+        keyVarType = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dt")[3].getText().strip()
+        valueVarType = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dd")[3].find("span").getText().strip()
+        keyFreq = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dt")[4].getText().strip()
+        valueFreq = page.find_all('dl', class_='usa-width-one-half')[0].find_all("dd")[4].find('div').getText().strip()
+
+        keyGene = page.find_all('dl', class_='usa-width-one-half')[1].find_all("dt")[1].getText().strip()
+        valueGene = page.find_all('dl', class_='usa-width-one-half')[1].find_all("dd")[1].getText().strip()
+        keyPub = page.find_all('dl', class_='usa-width-one-half')[1].find_all("dt")[2].getText().strip()
+        valuePub = page.find_all('dl', class_='usa-width-one-half')[1].find_all("dd")[2].getText().strip()
+
+        pat = re.compile(r"\s{2,}|\\n") # match 2 or more spaces or a new line character
+
+
+        print ("{:>19}:  {} {}".format(keyPos, valuePos0, valuePos1))
+        print ("{:>19}:  {}".format("SNP " + keyAlleles, valueAlleles))
+        print ("{:>19}:  {}".format(keyVarType, valueVarType))
+        print ("{:>19}:  {}".format(keyFreq, pat.sub(' ',valueFreq)))
+        print ("{:>19}:  {}".format(keyGene, valueGene))
+        print ("{:>19}:  {}".format(keyPub, pat.sub(' ',valuePub)))
+
+
+def main(args, config):
+
+    # these are the argument values past in at run time
+    summary = args.summary  # print summary dna report
+    get_num_base_pairs = args.numBasePairs
+    print_chrom_summary = args.printChromSummary
+    print_snp = args.snpDetail
+    base_pair_summary = args.basePairSummary
+    base_pair_chrom = args.basePairChrom
+    print_snp2 = args.chromPos
+    snp_web_view = args.snpWebView
+    snp_web_auto = args.snpWebAuto
+
+    # get data from config file
+    dna_file_name = config['PROVIDER']['dna_file']
+    subject = config['PERSON']['name']
+
+
+
+    dnaTable = load_dna_file(dna_file_name)
     numBasePairs = len(dnaTable)
     if get_num_base_pairs or summary:
         print ("*" * 40)
-        print ("The file reports on {:,} DNA base pairs or SNPs".format(numBasePairs ))
+        print_header(numBasePairs, subject)
 
     if base_pair_summary or summary:
         print ("*" * 40)
@@ -100,7 +191,22 @@ def main(get_num_base_pairs, print_chrom_summary, print_snp, base_pair_summary, 
         print ("*" * 40)
         print_base_pair_chrom(dnaTable, base_pair_chrom )
 
+    if base_pair_chrom != "None":
+        print ("*" * 40)
+        print_base_pair_chrom(dnaTable, base_pair_chrom )
+
+    if snp_web_view != "None":
+        snp_list = config[snp_web_view].values()  # note that snp_group is passed in here
+        print ("*" * 40)
+        check_snp_view(dnaTable, snp_list)
+
+    if snp_web_auto != "None":
+        snp_list = config[snp_web_auto].values()  # note that snp_group is passed in here
+        print ("*" * 40)
+        check_snp_auto(dnaTable, snp_list)
+
     print ("*" * 40)
+
 
 
 if __name__ == "__main__":
@@ -134,12 +240,18 @@ if __name__ == "__main__":
                         help="paste SNP ref from clip board and get SNP detail from file", default=False)
     parser.add_argument('--basePairChrom', type=str,
                         help="for a given base pair e.g A-A, print count by chromosome", default="None")
+    parser.add_argument('--snpWebView', type=str,
+                        help="check a list of SNP ids with a given group heading in config file", default="None")
+    parser.add_argument('--snpWebAuto', type=str,
+                        help="check a list of SNP ids with a given group heading in config file", default="None")
+
 
     args = parser.parse_args()
 
     if args.paste:
         args.snpDetail = pyperclip.paste()
 
-    main( args.numBasePairs, args.printChromSummary,
-          args.snpDetail, args.basePairSummary,
-          args.basePairChrom, args.summary, args.chromPos)
+    config = configparser.ConfigParser(inline_comment_prefixes='#')
+    config.read("dna.ini")
+
+    main(args, config)
