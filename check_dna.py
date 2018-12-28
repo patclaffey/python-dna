@@ -1,3 +1,5 @@
+from dnatools.exceptions import *
+import dnatools.exceptions
 import collections
 import argparse
 import pyperclip
@@ -6,6 +8,15 @@ import webbrowser
 import requests
 import bs4
 import re
+import logging
+import os
+
+#class configFileError (Exception):
+    #pass
+    #print ("Error: Configuration file not found")
+
+LOG_FORMAT = '%(asctime)s %(name)s %(levelname)s %(message)s'
+LOG_LEVEL = logging.DEBUG
 
 
 def load_dna_file(file_in):
@@ -140,8 +151,41 @@ def check_snp_auto(dnaTable, snp_list):
         print ("{:>19}:  {}".format(keyGene, valueGene))
         print ("{:>19}:  {}".format(keyPub, pat.sub(' ',valuePub)))
 
+def validate_config_file_exists(config_file_name):
+    if not os.access(config_file_name, os.F_OK):
+        raise configFileError(config_file_name)
 
-def main(args, config):
+def get_dna_file(config):
+    # get data from config file
+    curr_config_section = 'PROVIDER'
+    curr_config_option = 'dna_file'
+    if not config.has_section(curr_config_section):
+        raise configSectionError(curr_config_section)
+    if not config.has_option(curr_config_section,curr_config_option):
+        raise configOptionError(curr_config_section,curr_config_option)
+    dna_file_name = config[curr_config_section][curr_config_option]
+    return dna_file_name
+
+def validate_dna_file_exists(dna_file_name):
+    if not os.access(dna_file_name, os.F_OK):
+        raise configFileError(dna_file_name)
+
+def main(args):
+
+    # validate config file exists and read it
+    config_file_name = args.config
+    validate_config_file_exists(config_file_name)
+    config = configparser.ConfigParser(inline_comment_prefixes='#')
+    config.read(config_file_name)
+
+    # get data from config file
+    dna_file_name = get_dna_file(config)
+    validate_dna_file_exists(dna_file_name)
+
+    subject = config['PERSON']['name']
+
+    dnaTable = load_dna_file(dna_file_name)
+    numBasePairs = len(dnaTable)
 
     # these are the argument values past in at run time
     summary = args.summary  # print summary dna report
@@ -154,14 +198,6 @@ def main(args, config):
     snp_web_view = args.snpWebView
     snp_web_auto = args.snpWebAuto
 
-    # get data from config file
-    dna_file_name = config['PROVIDER']['dna_file']
-    subject = config['PERSON']['name']
-
-
-
-    dnaTable = load_dna_file(dna_file_name)
-    numBasePairs = len(dnaTable)
     if get_num_base_pairs or summary:
         print ("*" * 40)
         print_header(numBasePairs, subject)
@@ -209,9 +245,19 @@ def main(args, config):
 
 
 
+
+def validate_config_file_section(config):
+    if not config.has_section("PROVIDERxxyy"):
+        raise configSectionError('PROVIDERxxyy')
+
+
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
+    parser.add_argument('--config', '-c',
+                        help='name of config file e.g. dna.ini', default = 'dna.ini')
     parser.add_argument('--summary',
                         action='store_true',
                         default=False,
@@ -248,10 +294,15 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+
+
     if args.paste:
         args.snpDetail = pyperclip.paste()
 
-    config = configparser.ConfigParser(inline_comment_prefixes='#')
-    config.read("dna.ini")
 
-    main(args, config)
+    try:
+        main(args)
+    except Exception as exc:
+        logging.exception("Unexpected error - cannot run program for DNA analysis")
+        exit(1)
+
