@@ -11,13 +11,13 @@ import re
 import logging
 import os
 
-#class configFileError (Exception):
-    #pass
-    #print ("Error: Configuration file not found")
-
-LOG_FORMAT = '%(asctime)s %(name)s %(levelname)s %(message)s'
+app_name = "check_dna_app"
 LOG_LEVEL = logging.DEBUG
-
+DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+# experiment with format
+# Exception tuple (à la sys.exc_info) or, if no exception has occurred, None.
+LOG_FORMAT = '%(asctime)s %(levelname)s %(filename)s %(funcName)s %(module)s %(message)s'
+logging.basicConfig(level=LOG_LEVEL, format=LOG_FORMAT, datefmt=DATE_FORMAT)
 
 def load_dna_file(file_in):
     """
@@ -49,7 +49,7 @@ def print_chromsome_summary(data):
         print("Chromosome {:>2} reports {:>7,} base pairs or SNPs".format(key, c[key]))
 
 
-def print_base_pair_chrom(data, basePair):
+def run_base_pair_by_chrom(data, basePair):
     c = collections.Counter()
     count = 0
     for record in data:
@@ -66,7 +66,7 @@ def print_base_pair_chrom(data, basePair):
 def print_base_pair_summary(data):
     c_valid = collections.Counter()
     c_invalid = collections.Counter()
-
+    print ("*" * 40)
     for record in data:
         allele1 = record[3]
         allele2 = record[4]
@@ -82,6 +82,7 @@ def print_base_pair_summary(data):
     print("Number of occurances in file of invalid base pairs:")
     for key in c_invalid.keys():
         print("Invalid Base Pair {} occurs {:>7,} times".format(key, c_invalid[key]))
+    print ("*" * 40)
 
 
 def print_header(numBasePairs, subject):
@@ -155,7 +156,7 @@ def validate_config_file_exists(config_file_name):
     if not os.access(config_file_name, os.F_OK):
         raise configFileError(config_file_name)
 
-def get_dna_file(config):
+def get_dna_file_name(config):
     # get data from config file
     curr_config_section = 'PROVIDER'
     curr_config_option = 'dna_file'
@@ -166,91 +167,93 @@ def get_dna_file(config):
     dna_file_name = config[curr_config_section][curr_config_option]
     return dna_file_name
 
+
 def validate_dna_file_exists(dna_file_name):
     if not os.access(dna_file_name, os.F_OK):
-        raise configFileError(dna_file_name)
+        raise dnaFileError(dna_file_name)
+
+
+def run_summary(config, dnaTable):
+    numBasePairs = len(dnaTable)
+    subject = "Not Available"
+    try:
+        subject = config['PERSON']['name']
+    except KeyError as error:
+        pass
+
+    print ("*" * 40)
+    print_header(numBasePairs, subject)
+    print ("*" * 40)
+    print_base_pair_summary(dnaTable)
+    print ("*" * 40)
+    print_chromsome_summary(dnaTable)
+    print ("*" * 40)
+
+
+def run_coordinate_snp_detail(dnaTable, coordinateSnpDetail):
+    print ("*" * 40)
+    chr, pos = coordinateSnpDetail.split(",")
+    for record in dnaTable:
+        if record[1] == chr and record[2] == pos:
+            print(record)
+    print ("*" * 40)
+
+
+def run_snp_id_detail(dnaTable, snpId):
+    print ("*" * 40)
+    for record in dnaTable:
+        if record[0] == snpId:
+            print(record)
+    print ("*" * 40)
+
 
 def main(args):
 
-    # validate config file exists and read it
+    # read configuration file or terminate program if it does not exist
     config_file_name = args.config
     validate_config_file_exists(config_file_name)
     config = configparser.ConfigParser(inline_comment_prefixes='#')
     config.read(config_file_name)
 
-    # get data from config file
-    dna_file_name = get_dna_file(config)
+    # from config file get name of dna file
+    # terminate program if dna file does not exist
+    dna_file_name = get_dna_file_name(config)
     validate_dna_file_exists(dna_file_name)
 
-    subject = config['PERSON']['name']
-
+    #load all dna data into Python list called dnaTable
     dnaTable = load_dna_file(dna_file_name)
-    numBasePairs = len(dnaTable)
 
     # these are the argument values past in at run time
     summary = args.summary  # print summary dna report
-    get_num_base_pairs = args.numBasePairs
-    print_chrom_summary = args.printChromSummary
-    print_snp = args.snpDetail
-    base_pair_summary = args.basePairSummary
-    base_pair_chrom = args.basePairChrom
-    print_snp2 = args.chromPos
-    snp_web_view = args.snpWebView
-    snp_web_auto = args.snpWebAuto
+    coordinateSnp = args.coordinateSnp
+    snpId = args.snpId
+    basePairByChrom = args.basePairByChrom
+    snp_web_view = args.snpBrowse
+    snp_web_auto = args.snpWebScrap
 
-    if get_num_base_pairs or summary:
-        print ("*" * 40)
-        print_header(numBasePairs, subject)
+    if not summary and coordinateSnp == "None" and  snpId == "None" and \
+        basePairByChrom == "None" and snp_web_view == "None" and snp_web_auto == "None":
+        run_summary(config, dnaTable)
 
-    if base_pair_summary or summary:
-        print ("*" * 40)
-        print_base_pair_summary(dnaTable)
+    if summary:
+        run_summary(config, dnaTable)
 
-    if print_chrom_summary or summary:
-        print ("*" * 40)
-        print_chromsome_summary(dnaTable)
+    if coordinateSnp != "None":
+        run_coordinate_snp_detail(dnaTable, coordinateSnp)
 
-    if print_snp != "None":
-        print ("*" * 40)
-        for record in dnaTable:
-            if record[0] == print_snp:
-                print(record)
+    if snpId != "None":
+        run_snp_id_detail(dnaTable, snpId)
 
-    if print_snp2 != "None":
-        print ("*" * 40)
-        chr,pos = print_snp2.split(",")
-        for record in dnaTable:
-            if record[1] == chr and record[2] == pos:
-                print(record)
-
-    if base_pair_chrom != "None":
-        print ("*" * 40)
-        print_base_pair_chrom(dnaTable, base_pair_chrom )
-
-    if base_pair_chrom != "None":
-        print ("*" * 40)
-        print_base_pair_chrom(dnaTable, base_pair_chrom )
+    if basePairByChrom != "None":
+        run_base_pair_by_chrom(dnaTable, basePairByChrom )
 
     if snp_web_view != "None":
         snp_list = config[snp_web_view].values()  # note that snp_group is passed in here
-        print ("*" * 40)
         check_snp_view(dnaTable, snp_list)
 
     if snp_web_auto != "None":
         snp_list = config[snp_web_auto].values()  # note that snp_group is passed in here
-        print ("*" * 40)
         check_snp_auto(dnaTable, snp_list)
-
-    print ("*" * 40)
-
-
-
-
-def validate_config_file_section(config):
-    if not config.has_section("PROVIDERxxyy"):
-        raise configSectionError('PROVIDERxxyy')
-
-
 
 
 if __name__ == "__main__":
@@ -259,50 +262,41 @@ if __name__ == "__main__":
     parser.add_argument('--config', '-c',
                         help='name of config file e.g. dna.ini', default = 'dna.ini')
     parser.add_argument('--summary',
-                        action='store_true',
-                        default=False,
+                        action='store_true', default=False,
                         help="Print summary")
-    parser.add_argument('--numBasePairs',
-                        action='store_true',
-                        default=False,
-                        help="Print total number of DNA base pairs reported in file")
-    parser.add_argument('--basePairSummary',
-                        action='store_true',
-                        default=False,
-                        help="Report on number of occurances of all base pair combinations")
-    parser.add_argument('--printChromSummary',
-                        action='store_true',
-                        default=False,
-                        help="Print number of DNA base pairs by chromosome")
-    parser.add_argument('-S','--snpDetail',
-                        type=str,
-                        default = "None",
+    parser.add_argument('--coordinateSnp',
+                        type=str, default="None",
+                        help="print line from dna file for a given dna coordinate "\
+                             "e.g. 1,569388. "\
+                             "A coordinate is specified by chromosone number, "\
+                            "followed by a comma, followed by position number")
+    parser.add_argument('-S', '--snpId',
+                        type=str, default="None",
                         help="print the detail from file given SNP reference")
-    parser.add_argument('--chromPos',
-                        type=str,
-                        default="None",
-                        help="print the detail from file given chrom number and position separated by comma")
     parser.add_argument('-P', '--paste', action='store_true',
                         help="paste SNP ref from clip board and get SNP detail from file", default=False)
-    parser.add_argument('--basePairChrom', type=str,
+    parser.add_argument('--basePairByChrom', type=str,
                         help="for a given base pair e.g A-A, print count by chromosome", default="None")
-    parser.add_argument('--snpWebView', type=str,
+    parser.add_argument('--snpBrowse', type=str,
                         help="check a list of SNP ids with a given group heading in config file", default="None")
-    parser.add_argument('--snpWebAuto', type=str,
+    parser.add_argument('--snpWebScrap', type=str,
                         help="check a list of SNP ids with a given group heading in config file", default="None")
-
 
     args = parser.parse_args()
-
-
 
     if args.paste:
         args.snpDetail = pyperclip.paste()
 
-
     try:
         main(args)
+    except configFileError as error_message:
+        logging.error(error_message)
+    except configSectionError as error_message:
+        logging.error(error_message)
+    except configOptionError as error_message:
+        logging.error(error_message)
+    except dnaFileError as error_message:
+        logging.error(error_message)
     except Exception as exc:
         logging.exception("Unexpected error - cannot run program for DNA analysis")
         exit(1)
-
