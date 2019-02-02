@@ -41,20 +41,25 @@ def load_dna_file(file_in):
     return header, data
 
 
-def print_chromsome_summary(file_out, data):
+def chromosome_report(file_out, data):
     c = collections.Counter()
     count = 0
+    TEMPLATE = "\tChromosome {:>2} reports {:>7,} DNA SNPs \n"
+    logging.info("The data file contains DNA SNP data")
+    logging.info("Print number of reported DNA SNPs by chromosome")
     for record in data:
         chromosome = record[1]
         c.update({int(chromosome): 1})
-    file_out.write("DNA base pairs reported by chromosome:"  + '\n')
+    file_out.write("Number of reported DNA SNPs by chromosome:"  + '\n')
     for key in c.keys():
-        file_out.write("Chromosome {:>2} reports {:>7,} base pairs or SNPs \n".format(key, c[key]))
+        file_out.write(TEMPLATE.format(key, c[key]))
 
 
 def run_base_pair_by_chrom(data, basePair):
     c = collections.Counter()
     count = 0
+    TEMPLATE = "\tChromosome {:>2} has {:>7,} occurances of base pair {}"
+    logging.info("counts for a specific base pair")
     for record in data:
         chromosome = record[1]
         allele1 = record[3]
@@ -63,12 +68,15 @@ def run_base_pair_by_chrom(data, basePair):
             c.update({int(chromosome): 1})
     print("DNA base pair {} occurances in file by chromosome:".format(basePair))
     for key in c.keys():
-        print("Chromosome {:>2} has {:>7,} occurances of base pair {}".format(key, c[key],basePair ))
+        print(TEMPLATE.format(key, c[key],basePair ))
 
 
 def print_base_pair_summary(file_out,data):
     c_valid = collections.Counter()
     c_invalid = collections.Counter()
+
+    TEMPLATE_VALID = "\tDNA Base Pair {} occurs {:>7,} times\n"
+    TEMPLATE_INVALID = "\tInvalid Base Pair {} occurs {:>7,} times\n"
     for record in data:
         allele1 = record[3]
         allele2 = record[4]
@@ -78,12 +86,14 @@ def print_base_pair_summary(file_out,data):
         else:
             c_invalid.update({allele1 + "-" + allele2: 1})
 
+    logging.info("Print number of occurances of valid base pairs")
     file_out.write("Number of occurances in file of valid base pairs:\n" )
     for key in c_valid.keys():
-        file_out.write("DNA Base Pair {} occurs {:>7,} times\n".format(key, c_valid[key]))
+        file_out.write(TEMPLATE_VALID.format(key, c_valid[key]))
+    logging.info("Print number of occurances of invalid base pairs")
     file_out.write("Number of occurances in file of invalid base pairs:\n")
     for key in c_invalid.keys():
-        file_out.write("Invalid Base Pair {} occurs {:>7,} times\n".format(key, c_invalid[key]))
+        file_out.write(TEMPLATE_INVALID.format(key, c_invalid[key]))
 
 
 
@@ -178,36 +188,52 @@ def get_dna_file_name(config):
     if not os.access(dna_file_name, os.F_OK):
         raise dnaFileError(dna_file_name)'''
 
-def report_header(file_out, config, header, dnaTable):
-    logging.info('Start of report_header function')
-    AncestryFlag = 'AncestryDNA' in header[0]
+def header_report(file_out, config, header, dnaTable):
 
-    assert AncestryFlag, 'DNA file provider not supported'
-    numBasePairs = len(dnaTable)
+    numSNPs = len(dnaTable)
     subject = "Not Available"
     try:
         subject = config['PERSON']['name']
     except KeyError as error:
         pass
 
-    file_out.write ("The subject is {}\n".format(subject))
-    file_out.write("The file reports on {:,} DNA base pairs or SNPs\n".format(numBasePairs))
-    logging.info('run_summary function done')
+    TEMPLATE = \
+'''Executive summary of dna file contents:
+    The subject is {subject}
+    File provider is {provider}
+    File dna build is {build}
+    Dna sequance name is {sequence_name}
+    The file reports on {numSNPs:,} dna SNPs
+'''
+
+    data_out = {"numSNPs": numSNPs,\
+                "subject": subject,\
+                "provider": config['PROVIDER']['provider'], \
+                "build":config['PROVIDER']['build'],\
+                "sequence_name": config['PROVIDER']['sequence_name']\
+                }
+    logging.info("Print the header data to log" )
+    logging.info(TEMPLATE.format(**data_out))
+    file_out.write(TEMPLATE.format(**data_out))
 
 def run_summary(config, header, dnaTable):
-    logging.info('Start of run_summary function')
+    logging.info('Start: run_summary() function')
     file_out_text = os.path.join(os.getcwd(), 'out', 'summary.txt')
-    logging.info(file_out_text)
+    logging.info("Output file name is " + file_out_text)
     file_out = open( file_out_text,'w')
+
     file_out.write("*" * 40 + '\n')
-    report_header(file_out, config, header, dnaTable)
+    header_report(file_out, config, header, dnaTable)
+
     file_out.write ("*" * 40 + '\n')
-    print_base_pair_summary(file_out,dnaTable)
+    chromosome_report(file_out,dnaTable)
+
     file_out.write ("*" * 40 + '\n')
-    print_chromsome_summary(file_out,dnaTable)
-    file_out.write ("*" * 40 + '\n')
+    print_base_pair_summary(file_out, dnaTable)
+    file_out.write("*" * 40 + '\n')
+
     file_out.close()
-    logging.info('run_summary function done')
+    logging.info('End: run_summary()  - success')
 
 
 def run_coordinate_snp_detail(dnaTable, coordinateSnpDetail):
@@ -234,18 +260,22 @@ def get_config(config_file_name):
 
 
 def main(args):
-    logging.info('Starting Main function')
-    logging.info('get name of configuration file')
+    logging.info('Start: main() function ' )
+    logging.info('Load application configuration file')
     # terminate program if it does not exist
     config_file_name = args.config
     config = get_config(config_file_name)
 
-    logging.info('get name of dna data file from config file')
+    logging.info('Get dna data file name from configuration file')
     # terminate program if it does not exist
     dna_file_name = get_dna_file_name(config)
 
-    logging.info('load the dna file data into Python list')
+    logging.info('Load dna data into Python')
     header, dnaTable = load_dna_file(dna_file_name)
+
+    logging.info('Verify that dna file data is from Ancestry.com')
+    AncestryFlag = 'AncestryDNA' in header[0]
+    assert AncestryFlag, 'DNA file provider not supported'
 
     # get the argument values given at run time
     summaryReport = args.summary
@@ -257,14 +287,14 @@ def main(args):
 
     if not summaryReport and coordinateSnp == "None" and  snpId == "None" and \
         basePairByChrom == "None" and snp_web_view == "None" and snp_web_auto == "None":
-        logging.info('No arguments supplied - by default call summary report')
+        logging.info('No arguments supplied - default option is to generate summary report')
         run_summary(config, header, dnaTable)
-        logging.info('Summary report done')
+
 
     if summaryReport:
-        logging.info('About to run summary report')
-        run_summary(config, dnaTable)
-        logging.info('Summary report done')
+        logging.info('Command line argument means generate summary report')
+        run_summary(config, header, dnaTable)
+
 
     if coordinateSnp != "None":
         run_coordinate_snp_detail(dnaTable, coordinateSnp)
@@ -283,12 +313,13 @@ def main(args):
         snp_list = config[snp_web_auto].values()  # note that snp_group is passed in here
         check_snp_auto(dnaTable, snp_list)
 
+    logging.info('End: main() function ')
 
 if __name__ == "__main__":
 
-    logging.info('Create the argparse command line parser')
+    logging.info('Create command line parser using argparse module')
     parser = argparse.ArgumentParser()
-    logging.info('Add the command line arugments to the parser')
+    logging.info('Add command line arugments to parser')
     parser.add_argument('--config', '-c',
                         help='name of config file e.g. dna.ini', default = 'dna.ini')
     parser.add_argument('--summary',
@@ -311,17 +342,17 @@ if __name__ == "__main__":
                         help="check a list of SNP ids with a given group heading in config file", default="None")
     parser.add_argument('--snpWebScrap', type=str,
                         help="check a list of SNP ids with a given group heading in config file", default="None")
-    logging.info('Parse the command line arugments')
+    logging.info('Parse command line arugments')
     args = parser.parse_args()
 
-    logging.info('Support paste of SNP Id')
+    logging.info('Support paste of SNP Id using third party package pyperclip')
     if args.paste:
         args.snpDetail = pyperclip.paste()
 
-    logging.info('Call main function with the command line arguments')
+    logging.info('Call main() function, passing command line arguments')
     try:
         main(args)
-        logging.info('Main function done')
+        logging.info('End: program completed successfully')
     except configFileError as error_message:
         logging.error(error_message)
     except configSectionError as error_message:
